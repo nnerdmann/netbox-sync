@@ -1,5 +1,11 @@
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
 class Sync:
-    
+
     api_object = None
     sync_parameters = []
     unique_parameter = []
@@ -11,7 +17,7 @@ class Sync:
         self.mapping_file = mapping_file
 
     def sync(self):
-        print("Starting synchronization process for ", Sync.api_object)
+        logger.info("Starting synchronization process for %s", self.api_object)
         
         parts = self.api_object.split('.')
         obj = self.master_conn
@@ -34,7 +40,7 @@ class Sync:
                 else:
                     new_obj = slave_obj
             else:
-                print("Object does not exist in slave, creating:", master_obj.display)
+                logger.info("Object does not exist in slave, creating: %s", master_obj.display)
                 payload = self.pre_sync(master_obj,self.create_payload(master_obj))
                 new_obj = slave_obj.create(payload)
                 new_obj = self.post_create(master_obj,new_obj)
@@ -45,7 +51,7 @@ class Sync:
     
             if new_obj:
                 new_obj = self.post_sync(master_obj, new_obj)
-        print("Synchronization process completed")
+        logger.info("Synchronization process completed")
         
     def create_payload(self, obj):
         """Create payload from master object for synchronization."""
@@ -72,7 +78,12 @@ class Sync:
             master_val = self.get_unique_field(master_value)
             slave_val = self.get_unique_field(slave_value)
             if master_val != slave_val:
-                print(f"Difference found in {param}: Master({master_val}) != Slave({slave_val})")
+                logger.info(
+                    "Difference found in %s: Master(%s) != Slave(%s)",
+                    param,
+                    master_val,
+                    slave_val,
+                )
                 diff[param] = master_val
 
         for key, val in self.global_sync_values.items():
@@ -82,7 +93,12 @@ class Sync:
             # Compare val against slave_val's dictionary representation
             slave_val_dict = self.get_unique_field(slave_val)
             if val != slave_val_dict:
-                print(f"Global difference found in {key}: Master({val}) != Slave({slave_val_dict})")
+                logger.info(
+                    "Global difference found in %s: Master(%s) != Slave(%s)",
+                    key,
+                    val,
+                    slave_val_dict,
+                )
                 diff[key] = val
         
         if len(diff) == 0:
