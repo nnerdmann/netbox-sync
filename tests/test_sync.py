@@ -15,6 +15,19 @@ class DummyObj:
             setattr(self, key, value)
 
 
+class DummyEndpoint:
+    def __init__(self, objects):
+        self._objects = objects
+
+    def all(self):
+        return self._objects
+
+
+class DummyConnection:
+    def __init__(self, endpoint):
+        self.dcim = endpoint
+
+
 def test_get_unique_field_priorities():
     sync = DummySync(None, None)
 
@@ -61,3 +74,31 @@ def test_get_differences_detects_changes():
     diff = sync.get_differences(master, slave)
 
     assert diff == {"status": "active"}
+
+
+def test_build_filter_params_handles_unique_fields():
+    sync = DummySync(None, None)
+    obj = DummyObj(
+        name=SimpleNamespace(name="device-a"),
+        status=SimpleNamespace(value="active"),
+    )
+
+    assert sync._build_filter_params(obj) == {"name": "device-a"}
+
+
+def test_sync_continues_on_errors():
+    class FailingSync(DummySync):
+        api_object = "dcim"
+
+        def _sync_object(self, master_obj):
+            if master_obj.name == "bad":
+                raise RuntimeError("boom")
+            return master_obj
+
+    master_objects = [DummyObj(name="good"), DummyObj(name="bad"), DummyObj(name="good-2")]
+    conn = DummyConnection(DummyEndpoint(master_objects))
+    sync = FailingSync(conn, conn)
+
+    sync.sync()
+
+    assert len(sync.errors) == 1

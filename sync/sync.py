@@ -18,40 +18,64 @@ class Sync:
 
     def sync(self):
         logger.info("Starting synchronization process for %s", self.api_object)
-        
-        parts = self.api_object.split('.')
-        obj = self.master_conn
-        for part in parts:
-            obj = getattr(obj, part)
-        self.objects = obj.all()
-        
+
+        master_endpoint = self._resolve_api_object(self.master_conn)
+        self.objects = master_endpoint.all()
+        self.errors = []
+
         for master_obj in self.objects:
-            slave_obj = self.slave_conn
-            for part in parts:
-                slave_obj = getattr(slave_obj, part)
-            filter_params = {param: next(iter(self.get_unique_field(getattr(master_obj, param)).values())) if isinstance(self.get_unique_field(getattr(master_obj, param)), dict) else self.get_unique_field(getattr(master_obj, param)) for param in self.unique_parameter}
-            existing = slave_obj.filter(**filter_params)
-            if existing:
-                slave_obj = list(existing)[0]
-                diff = self.get_differences(master_obj,slave_obj)
-                diff = self.pre_sync(master_obj,diff)
-                if diff:                 
-                    new_obj = slave_obj.update(diff)
-                else:
-                    new_obj = slave_obj
+            try:
+                new_obj = self._sync_object(master_obj)
+                if new_obj:
+                    self.post_sync(master_obj, new_obj)
+            except Exception as exc:
+                identifier = getattr(master_obj, "display", repr(master_obj))
+                logger.exception(
+                    "Failed to sync %s object %s", self.api_object, identifier
+                )
+                self.errors.append({"object": identifier, "error": str(exc)})
+
+        if self.errors:
+            logger.warning(
+                "Synchronization completed with %d error(s) for %s",
+                len(self.errors),
+                self.api_object,
+            )
+        else:
+            logger.info("Synchronization process completed")
+
+    def _resolve_api_object(self, connection):
+        obj = connection
+        for part in self.api_object.split("."):
+            obj = getattr(obj, part)
+        return obj
+
+    def _build_filter_params(self, master_obj):
+        filter_params = {}
+        for param in self.unique_parameter:
+            unique_value = self.get_unique_field(getattr(master_obj, param))
+            if isinstance(unique_value, dict):
+                filter_params[param] = next(iter(unique_value.values()))
             else:
-                logger.info("Object does not exist in slave, creating: %s", master_obj.display)
-                payload = self.pre_sync(master_obj,self.create_payload(master_obj))
-                new_obj = slave_obj.create(payload)
-                new_obj = self.post_create(master_obj,new_obj)
-                
-            
-            if obj is None:
-                continue
-    
-            if new_obj:
-                new_obj = self.post_sync(master_obj, new_obj)
-        logger.info("Synchronization process completed")
+                filter_params[param] = unique_value
+        return filter_params
+
+    def _sync_object(self, master_obj):
+        slave_endpoint = self._resolve_api_object(self.slave_conn)
+        filter_params = self._build_filter_params(master_obj)
+        existing = slave_endpoint.filter(**filter_params)
+        if existing:
+            slave_obj = list(existing)[0]
+            diff = self.get_differences(master_obj, slave_obj)
+            diff = self.pre_sync(master_obj, diff)
+            if diff:
+                return slave_obj.update(diff)
+            return slave_obj
+
+        logger.info("Object does not exist in slave, creating: %s", master_obj.display)
+        payload = self.pre_sync(master_obj, self.create_payload(master_obj))
+        new_obj = slave_endpoint.create(payload)
+        return self.post_create(master_obj, new_obj)
         
     def create_payload(self, obj):
         """Create payload from master object for synchronization."""
