@@ -3,7 +3,7 @@ from sync.sync import Sync
 class Devices(Sync): 
    
     api_object = "dcim.devices"
-    sync_parameters = ["name", "site", "role","device_type","status","serial","rack","location","serial","position","face","platform"]
+    sync_parameters = ["name", "site", "role", "device_type", "status", "serial", "rack", "location", "position", "face", "platform"]
     unique_parameter = ["name"]
    
     def post_create(self, oldobj, newobj):
