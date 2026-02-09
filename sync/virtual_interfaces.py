@@ -15,3 +15,4 @@ class VirtualInterfaces(Sync):
         "description",
     ]
     unique_parameter = ["name", "virtual_machine"]
+    global_sync_values = {}
