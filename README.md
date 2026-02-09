@@ -59,6 +59,34 @@ python main.py \
 pytest
 ```
 
+### Integration testing with NetBox
+
+The integration tests require access to two NetBox instances. You can use the
+provided Docker Compose configuration to spin up a test NetBox stack and then
+point the tests at it.
+
+1. Start NetBox:
+
+```bash
+docker compose -f docker-compose.netbox-test.yml up -d
+```
+
+2. Create API tokens for the master and slave NetBox instances (or reuse one
+instance for both while testing) and export the required environment variables:
+
+```bash
+export NETBOX_MASTER_URL="http://localhost:8080/api/"
+export NETBOX_MASTER_TOKEN="..."
+export NETBOX_SLAVE_URL="http://localhost:8080/api/"
+export NETBOX_SLAVE_TOKEN="..."
+```
+
+3. Run the integration test:
+
+```bash
+pytest tests/test_integration_virtualization.py
+```
+
 ## Notes
 
 - The `Sync` base class encapsulates common diff/creation logic.

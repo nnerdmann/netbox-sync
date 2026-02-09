@@ -8,6 +8,11 @@ from sync.devices import Devices
 from sync.modules_bays import ModuleBays
 from sync.device_bays import DeviceBays
 from sync.interfaces import Interfaces
+from sync.cluster_types import ClusterTypes
+from sync.cluster_groups import ClusterGroups
+from sync.clusters import Clusters
+from sync.virtual_machines import VirtualMachines
+from sync.virtual_interfaces import VirtualInterfaces
 
 
 # main.py
@@ -64,7 +69,17 @@ def main():
     
     con_master = api(args.master_url, token=args.master_token)
     con_slave = api(args.slave_url, token=args.slave_token)
-    
+
+    cluster_types = ClusterTypes(con_master, con_slave, args.mapping)
+    cluster_types.sync()
+    cluster_groups = ClusterGroups(con_master, con_slave, args.mapping)
+    cluster_groups.sync()
+    clusters = Clusters(con_master, con_slave, args.mapping)
+    clusters.sync()
+    virtual_machines = VirtualMachines(con_master, con_slave, args.mapping)
+    virtual_machines.sync()
+    virtual_interfaces = VirtualInterfaces(con_master, con_slave, args.mapping)
+    virtual_interfaces.sync()
     # racks = Racks(con_master, con_slave, args.mapping)
     # racks.sync()
     devices = Devices(con_master, con_slave, args.mapping)
