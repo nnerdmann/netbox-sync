@@ -70,16 +70,6 @@ def main():
     con_master = api(args.master_url, token=args.master_token)
     con_slave = api(args.slave_url, token=args.slave_token)
 
-    cluster_types = ClusterTypes(con_master, con_slave, args.mapping)
-    cluster_types.sync()
-    cluster_groups = ClusterGroups(con_master, con_slave, args.mapping)
-    cluster_groups.sync()
-    clusters = Clusters(con_master, con_slave, args.mapping)
-    clusters.sync()
-    virtual_machines = VirtualMachines(con_master, con_slave, args.mapping)
-    virtual_machines.sync()
-    virtual_interfaces = VirtualInterfaces(con_master, con_slave, args.mapping)
-    virtual_interfaces.sync()
     # racks = Racks(con_master, con_slave, args.mapping)
     # racks.sync()
     devices = Devices(con_master, con_slave, args.mapping)
@@ -90,6 +80,16 @@ def main():
     devbay.sync()
     interfaces = Interfaces(con_master, con_slave, args.mapping)
     interfaces.sync()
+    cluster_types = ClusterTypes(con_master, con_slave, args.mapping)
+    cluster_types.sync()
+    cluster_groups = ClusterGroups(con_master, con_slave, args.mapping)
+    cluster_groups.sync()
+    clusters = Clusters(con_master, con_slave, args.mapping)
+    clusters.sync()
+    virtual_machines = VirtualMachines(con_master, con_slave, args.mapping)
+    virtual_machines.sync()
+    virtual_interfaces = VirtualInterfaces(con_master, con_slave, args.mapping)
+    virtual_interfaces.sync()
               
     
     
