@@ -78,6 +78,11 @@ def main():
     parser.add_argument("--slave-url", required=True, help="Slave NetBox URL")
     parser.add_argument("--slave-token", required=True, help="Slave NetBox API token")
     parser.add_argument("--mapping", type=str, help="JSON file for mapping")
+    parser.add_argument(
+        "--enable-threading",
+        action="store_true",
+        help="Enable pynetbox threading for both master and slave API clients",
+    )
     parser.add_argument("--smtp-host", default="localhost", help="SMTP server host")
     parser.add_argument("--smtp-port", type=int, default=25, help="SMTP server port")
     parser.add_argument("--smtp-user", help="SMTP username")
@@ -111,9 +116,10 @@ def main():
     logger.info("Starting NetBox sync")
     logger.debug("Runtime arguments: %s", {k: v for k, v in vars(args).items() if "token" not in k and "password" not in k})
     
-    con_master = api(args.master_url, token=args.master_token)
-    con_slave = api(args.slave_url, token=args.slave_token)
-    logger.debug("Initialized master and slave NetBox API clients")
+    api_kwargs = {"threading": args.enable_threading}
+    con_master = api(args.master_url, token=args.master_token, **api_kwargs)
+    con_slave = api(args.slave_url, token=args.slave_token, **api_kwargs)
+    logger.debug("Initialized master and slave NetBox API clients (threading=%s)", args.enable_threading)
 
     # racks = Racks(con_master, con_slave, args.mapping)
     # racks.sync()
