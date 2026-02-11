@@ -214,3 +214,56 @@ def test_build_sync_plan_with_demo_data():
     assert [item["action"] for item in plan] == ["update", "create"]
     assert plan[0]["payload"] == {"status": "active"}
     assert plan[1]["payload"] == {"name": "demo-rtr-2", "status": "active"}
+
+
+def test_create_payload_skips_invalid_relation_lookup_values():
+    sync = DummySync(None, None)
+    obj = DummyObj(
+        name="router-1",
+        status=SimpleNamespace(value="active"),
+        tags=[
+            SimpleNamespace(slug="core"),
+            SimpleNamespace(slug=None),
+            SimpleNamespace(slug="None"),
+            {"slug": "edge"},
+            {"slug": "null"},
+        ],
+    )
+
+    payload = sync.create_payload(obj)
+
+    assert payload["tags"] == [{"slug": "core"}, {"slug": "edge"}]
+
+
+def test_sync_create_handles_invalid_child_relation_values():
+    class ChildRelationSync(DummySync):
+        api_object = "dcim"
+        sync_parameters = ["name", "device", "status", "tags"]
+        unique_parameter = ["name"]
+        global_sync_values = {}
+
+    master_objects = [
+        DummyObj(
+            name="iface-1",
+            device=SimpleNamespace(name="None"),
+            status=SimpleNamespace(value="active"),
+            tags=[SimpleNamespace(slug="none"), SimpleNamespace(slug="uplink")],
+        )
+    ]
+
+    master = DummyConnection(DummyEndpoint(master_objects))
+    slave_endpoint = DummyEndpoint([])
+    slave = DummyConnection(slave_endpoint)
+
+    sync = ChildRelationSync(master, slave)
+    sync.sync()
+
+    assert sync.errors == []
+    assert slave_endpoint.created_payloads == [
+        {
+            "name": "iface-1",
+            "device": None,
+            "status": "active",
+            "tags": [{"slug": "uplink"}],
+        }
+    ]

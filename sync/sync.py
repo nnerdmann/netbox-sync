@@ -204,10 +204,7 @@ class Sync:
         payload = {}
         for param in self.sync_parameters:
             value = getattr(obj, param)
-            if isinstance(value, list):
-                payload[param] = [self._normalize_value(param, item) for item in value]
-            else:
-                payload[param] = self._normalize_value(param, value)
+            payload[param] = self._normalize_value(param, value)
 
         for key, val in self.global_sync_values.items():
             payload[key] = val
@@ -304,17 +301,31 @@ class Sync:
 
     def _normalize_value(self, param, value):
         if isinstance(value, list):
-            return [self._normalize_value(param, item) for item in value]
+            normalized_items = [self._normalize_value(param, item) for item in value]
+            if param in self.relation_lookup_fields:
+                normalized_items = [item for item in normalized_items if item is not None]
+            return normalized_items
 
         if param in self.relation_lookup_fields:
             lookup_field = self.relation_lookup_fields[param]
-            return {lookup_field: self._extract_lookup_value(value, lookup_field)}
+            lookup_value = self._extract_lookup_value(value, lookup_field)
+            if self._is_invalid_lookup_value(lookup_value):
+                return None
+            return {lookup_field: lookup_value}
 
         if param in self.scalar_lookup_fields:
             lookup_field = self.scalar_lookup_fields[param]
             return self._extract_lookup_value(value, lookup_field)
 
         return value
+
+    def _is_invalid_lookup_value(self, value):
+        if value is None:
+            return True
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            return lowered in {"", "none", "null", "undefined", "nan"}
+        return False
 
     def pre_sync(self, oldobj, newobj):
         # Placeholder for pre-sync processing
