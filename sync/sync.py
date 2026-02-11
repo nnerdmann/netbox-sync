@@ -10,7 +10,7 @@ class Sync:
     sync_parameters = []
     unique_parameter = []
     global_sync_values = {"tenant": {"slug": "ipamstuttgartip"}}
-    
+
     def __init__(self, master_conn, slave_conn, mapping_file=None):
         self.master_conn = master_conn
         self.slave_conn = slave_conn
@@ -20,12 +20,18 @@ class Sync:
         logger.info("Starting synchronization process for %s", self.api_object)
 
         master_endpoint = self._resolve_api_object(self.master_conn)
-        self.objects = master_endpoint.all()
-        self.errors = []
+        slave_endpoint = self._resolve_api_object(self.slave_conn)
+        master_objects = list(master_endpoint.all())
+        slave_objects = list(slave_endpoint.all())
 
-        for master_obj in self.objects:
+        self.errors = []
+        slave_index = self._build_slave_index(slave_objects)
+        sync_plan = self._build_sync_plan(master_objects, slave_index)
+
+        for plan_item in sync_plan:
+            master_obj = plan_item["master_obj"]
             try:
-                new_obj = self._sync_object(master_obj)
+                new_obj = self._apply_plan_item(slave_endpoint, plan_item)
                 if new_obj:
                     self.post_sync(master_obj, new_obj)
             except Exception as exc:
@@ -47,7 +53,7 @@ class Sync:
     def _resolve_api_object(self, connection):
         obj = connection
         for part in self.api_object.split("."):
-            obj = getattr(obj, part)
+            obj = getattr(obj, part.replace("-", "_"))
         return obj
 
     def _build_filter_params(self, master_obj):
@@ -60,23 +66,78 @@ class Sync:
                 filter_params[param] = unique_value
         return filter_params
 
-    def _sync_object(self, master_obj):
-        slave_endpoint = self._resolve_api_object(self.slave_conn)
-        filter_params = self._build_filter_params(master_obj)
-        existing = slave_endpoint.filter(**filter_params)
-        if existing:
-            slave_obj = list(existing)[0]
-            diff = self.get_differences(master_obj, slave_obj)
-            diff = self.pre_sync(master_obj, diff)
-            if diff:
-                return slave_obj.update(diff)
-            return slave_obj
+    def _make_hashable(self, value):
+        if isinstance(value, dict):
+            return tuple(sorted((k, self._make_hashable(v)) for k, v in value.items()))
+        if isinstance(value, list):
+            return tuple(self._make_hashable(item) for item in value)
+        return value
 
-        logger.info("Object does not exist in slave, creating: %s", master_obj.display)
-        payload = self.pre_sync(master_obj, self.create_payload(master_obj))
-        new_obj = slave_endpoint.create(payload)
-        return self.post_create(master_obj, new_obj)
-        
+    def _build_unique_key(self, obj):
+        key_values = []
+        for param in self.unique_parameter:
+            value = self.get_unique_field(getattr(obj, param))
+            key_values.append(self._make_hashable(value))
+        return tuple(key_values)
+
+    def _build_slave_index(self, slave_objects):
+        index = {}
+        for slave_obj in slave_objects:
+            key = self._build_unique_key(slave_obj)
+            if key not in index:
+                index[key] = slave_obj
+        return index
+
+    def _build_sync_plan(self, master_objects, slave_index):
+        sync_plan = []
+        for master_obj in master_objects:
+            try:
+                key = self._build_unique_key(master_obj)
+                slave_obj = slave_index.get(key)
+                if slave_obj is None:
+                    logger.info("Object does not exist in slave, creating: %s", getattr(master_obj, "display", repr(master_obj)))
+                    payload = self.pre_sync(master_obj, self.create_payload(master_obj))
+                    sync_plan.append(
+                        {"action": "create", "master_obj": master_obj, "payload": payload}
+                    )
+                    continue
+
+                diff = self.get_differences(master_obj, slave_obj)
+                diff = self.pre_sync(master_obj, diff)
+                if diff:
+                    sync_plan.append(
+                        {
+                            "action": "update",
+                            "master_obj": master_obj,
+                            "slave_obj": slave_obj,
+                            "payload": diff,
+                        }
+                    )
+                else:
+                    sync_plan.append(
+                        {"action": "noop", "master_obj": master_obj, "slave_obj": slave_obj}
+                    )
+            except Exception as exc:
+                identifier = getattr(master_obj, "display", repr(master_obj))
+                logger.exception(
+                    "Failed to prepare %s sync plan for object %s", self.api_object, identifier
+                )
+                self.errors.append({"object": identifier, "error": str(exc)})
+        return sync_plan
+
+    def _apply_plan_item(self, slave_endpoint, plan_item):
+        action = plan_item["action"]
+        if action == "create":
+            new_obj = slave_endpoint.create(plan_item["payload"])
+            return self.post_create(plan_item["master_obj"], new_obj)
+
+        slave_obj = plan_item["slave_obj"]
+        if action == "update":
+            for key, value in plan_item["payload"].items():
+                setattr(slave_obj, key, value)
+            slave_obj.save()
+        return slave_obj
+
     def create_payload(self, obj):
         """Create payload from master object for synchronization."""
         payload = {}
@@ -90,15 +151,12 @@ class Sync:
         for key, val in self.global_sync_values.items():
             payload[key] = val
         return payload
-    
+
     def get_differences(self, master_obj, slave_obj):
         diff = {}
         for param in self.sync_parameters:
             master_value = getattr(master_obj, param)
             slave_value = getattr(slave_obj, param)
-            # Compare slug if values are objects, otherwise compare directly
-            # master_val = {"slug":master_value.slug} if hasattr(master_value, 'slug') else master_value
-            # slave_val = {"slug":slave_value.slug} if hasattr(slave_value, 'slug') else slave_value
             master_val = self.get_unique_field(master_value)
             slave_val = self.get_unique_field(slave_value)
             if master_val != slave_val:
@@ -114,7 +172,6 @@ class Sync:
             if hasattr(slave_obj, key) is False:
                 continue
             slave_val = getattr(slave_obj, key)
-            # Compare val against slave_val's dictionary representation
             slave_val_dict = self.get_unique_field(slave_val)
             if val != slave_val_dict:
                 logger.info(
@@ -124,31 +181,31 @@ class Sync:
                     slave_val_dict,
                 )
                 diff[key] = val
-        
+
         if len(diff) == 0:
             return False
         return diff
-    
-    def get_unique_field(self,obj):
-        if hasattr(obj, 'slug'):
-            return {"slug":obj.slug} 
-        elif hasattr(obj, 'name'):
-            return {"name":obj.name}
-        elif hasattr(obj, 'value'):
+
+    def get_unique_field(self, obj):
+        if hasattr(obj, "slug"):
+            return {"slug": obj.slug}
+        elif hasattr(obj, "name"):
+            return {"name": obj.name}
+        elif hasattr(obj, "value"):
             return obj.value
-        elif hasattr(obj, 'address'):
+        elif hasattr(obj, "address"):
             return obj.address
         else:
             return obj
-        
+
     def pre_sync(self, oldobj, newobj):
         # Placeholder for pre-sync processing
-        return newobj    
-    
+        return newobj
+
     def post_sync(self, oldobj, newobj):
         # Placeholder for post-sync processing
         return newobj
-    
+
     def post_create(self, oldobj, newobj):
         # Placeholder for post-create processing
         return newobj
