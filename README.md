@@ -53,6 +53,21 @@ python main.py \
   --smtp-starttls
 ```
 
+
+### Optional API Threading
+
+For larger sync runs, you can enable pynetbox request threading for both API
+clients:
+
+```bash
+python main.py \
+  --master-url https://netbox.example/api/ \
+  --master-token <MASTER_TOKEN> \
+  --slave-url https://netbox.example/api/ \
+  --slave-token <SLAVE_TOKEN> \
+  --enable-threading
+```
+
 ## Testing
 
 ```bash

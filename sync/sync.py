@@ -10,6 +10,28 @@ class Sync:
     sync_parameters = []
     unique_parameter = []
     global_sync_values = {"tenant": {"slug": "ipamstuttgartip"}}
+    relation_lookup_fields = {
+        "site": "slug",
+        "role": "slug",
+        "device_type": "slug",
+        "rack": "name",
+        "location": "name",
+        "platform": "slug",
+        "cluster": "name",
+        "tenant": "slug",
+        "group": "name",
+        "type": "slug",
+        "device": "name",
+        "parent": "name",
+        "virtual_machine": "name",
+        "untagged_vlan": "vid",
+        "tags": "slug",
+    }
+    scalar_lookup_fields = {
+        "status": "value",
+        "mode": "value",
+        "face": "value",
+    }
 
     def __init__(self, master_conn, slave_conn, mapping_file=None):
         self.master_conn = master_conn
@@ -75,7 +97,7 @@ class Sync:
     def _build_filter_params(self, master_obj):
         filter_params = {}
         for param in self.unique_parameter:
-            unique_value = self.get_unique_field(getattr(master_obj, param))
+            unique_value = self._normalize_value(param, getattr(master_obj, param))
             if isinstance(unique_value, dict):
                 filter_params[param] = next(iter(unique_value.values()))
             else:
@@ -92,7 +114,7 @@ class Sync:
     def _build_unique_key(self, obj):
         key_values = []
         for param in self.unique_parameter:
-            value = self.get_unique_field(getattr(obj, param))
+            value = self._normalize_value(param, getattr(obj, param))
             key_values.append(self._make_hashable(value))
         return tuple(key_values)
 
@@ -183,9 +205,9 @@ class Sync:
         for param in self.sync_parameters:
             value = getattr(obj, param)
             if isinstance(value, list):
-                payload[param] = [self.get_unique_field(item) for item in value]
+                payload[param] = [self._normalize_value(param, item) for item in value]
             else:
-                payload[param] = self.get_unique_field(value)
+                payload[param] = self._normalize_value(param, value)
 
         for key, val in self.global_sync_values.items():
             payload[key] = val
@@ -201,8 +223,8 @@ class Sync:
         for param in self.sync_parameters:
             master_value = getattr(master_obj, param)
             slave_value = getattr(slave_obj, param)
-            master_val = self.get_unique_field(master_value)
-            slave_val = self.get_unique_field(slave_value)
+            master_val = self._normalize_value(param, master_value)
+            slave_val = self._normalize_value(param, slave_value)
             if master_val != slave_val:
                 logger.info(
                     "Difference found in %s: Master(%s) != Slave(%s)",
@@ -216,7 +238,7 @@ class Sync:
             if hasattr(slave_obj, key) is False:
                 continue
             slave_val = getattr(slave_obj, key)
-            slave_val_dict = self.get_unique_field(slave_val)
+            slave_val_dict = self._normalize_value(key, slave_val)
             if val != slave_val_dict:
                 logger.info(
                     "Global difference found in %s: Master(%s) != Slave(%s)",
@@ -235,17 +257,36 @@ class Sync:
         )
         return diff
 
-    def get_unique_field(self, obj):
-        if hasattr(obj, "slug"):
-            return {"slug": obj.slug}
-        elif hasattr(obj, "name"):
-            return {"name": obj.name}
-        elif hasattr(obj, "value"):
-            return obj.value
-        elif hasattr(obj, "address"):
-            return obj.address
-        else:
-            return obj
+    def _extract_lookup_value(self, value, lookup_field):
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            return value.get(lookup_field)
+
+        try:
+            return value[lookup_field]
+        except (TypeError, KeyError, IndexError):
+            pass
+
+        try:
+            return getattr(value, lookup_field)
+        except AttributeError:
+            return value
+
+    def _normalize_value(self, param, value):
+        if isinstance(value, list):
+            return [self._normalize_value(param, item) for item in value]
+
+        if param in self.relation_lookup_fields:
+            lookup_field = self.relation_lookup_fields[param]
+            return {lookup_field: self._extract_lookup_value(value, lookup_field)}
+
+        if param in self.scalar_lookup_fields:
+            lookup_field = self.scalar_lookup_fields[param]
+            return self._extract_lookup_value(value, lookup_field)
+
+        return value
 
     def pre_sync(self, oldobj, newobj):
         # Placeholder for pre-sync processing
