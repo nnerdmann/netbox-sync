@@ -238,7 +238,6 @@ class Sync:
             has_value, slave_val = self._try_get_param_value(slave_obj, key)
             if not has_value:
                 continue
-            slave_val = getattr(slave_obj, key)
             slave_val_dict = self._normalize_value(key, slave_val)
             if val != slave_val_dict:
                 logger.info(
@@ -257,6 +256,34 @@ class Sync:
             sorted(diff.keys()),
         )
         return diff
+
+    def _try_get_param_value(self, obj, param):
+        if obj is None:
+            return False, None
+
+        if isinstance(obj, dict):
+            if param in obj:
+                return True, obj[param]
+            return False, None
+
+        try:
+            value = obj[param]
+            return True, value
+        except (TypeError, KeyError, IndexError):
+            pass
+
+        try:
+            obj_dict = object.__getattribute__(obj, "__dict__")
+        except AttributeError:
+            obj_dict = None
+
+        if isinstance(obj_dict, dict) and param in obj_dict:
+            return True, obj_dict[param]
+
+        try:
+            return True, object.__getattribute__(obj, param)
+        except AttributeError:
+            return False, None
 
     def _extract_lookup_value(self, value, lookup_field):
         if value is None:

@@ -93,6 +93,23 @@ def test_get_differences_detects_changes():
 
 
 
+
+
+def test_try_get_param_value_supports_dict_and_objects():
+    sync = DummySync(None, None)
+
+    has_value, value = sync._try_get_param_value({"tenant": "core"}, "tenant")
+    assert has_value is True
+    assert value == "core"
+
+    has_value, value = sync._try_get_param_value(DummyObj(tenant="edge"), "tenant")
+    assert has_value is True
+    assert value == "edge"
+
+    has_value, value = sync._try_get_param_value(DummyObj(name="router"), "tenant")
+    assert has_value is False
+    assert value is None
+
 def test_get_differences_avoids_expensive_missing_attribute_lookup():
     sync = DummySync(None, None)
 
