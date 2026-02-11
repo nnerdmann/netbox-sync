@@ -44,14 +44,13 @@ class DummySaveObj(DummyObj):
         self.save_calls += 1
 
 
-def test_get_unique_field_priorities():
+def test_normalize_value_uses_param_lookup_rules():
     sync = DummySync(None, None)
 
-    assert sync.get_unique_field(SimpleNamespace(slug="core")) == {"slug": "core"}
-    assert sync.get_unique_field(SimpleNamespace(name="edge")) == {"name": "edge"}
-    assert sync.get_unique_field(SimpleNamespace(value="active")) == "active"
-    assert sync.get_unique_field(SimpleNamespace(address="10.0.0.1")) == "10.0.0.1"
-    assert sync.get_unique_field("raw") == "raw"
+    assert sync._normalize_value("site", SimpleNamespace(slug="dc1")) == {"slug": "dc1"}
+    assert sync._normalize_value("name", "edge") == "edge"
+    assert sync._normalize_value("status", SimpleNamespace(value="active")) == "active"
+    assert sync._normalize_value("tags", [SimpleNamespace(slug="core")]) == [{"slug": "core"}]
 
 
 def test_create_payload_includes_globals_and_lists():
@@ -92,10 +91,51 @@ def test_get_differences_detects_changes():
     assert diff == {"status": "active"}
 
 
+
+
+
+
+def test_try_get_param_value_supports_dict_and_objects():
+    sync = DummySync(None, None)
+
+    has_value, value = sync._try_get_param_value({"tenant": "core"}, "tenant")
+    assert has_value is True
+    assert value == "core"
+
+    has_value, value = sync._try_get_param_value(DummyObj(tenant="edge"), "tenant")
+    assert has_value is True
+    assert value == "edge"
+
+    has_value, value = sync._try_get_param_value(DummyObj(name="router"), "tenant")
+    assert has_value is False
+    assert value is None
+
+def test_get_differences_avoids_expensive_missing_attribute_lookup():
+    sync = DummySync(None, None)
+
+    class SlaveObj:
+        name = "router-1"
+        status = SimpleNamespace(value="active")
+        tags = []
+
+        def __getattr__(self, item):
+            if item == "tenant":
+                raise RuntimeError("unexpected dynamic lookup")
+            raise AttributeError(item)
+
+    master = DummyObj(
+        name="router-1",
+        status=SimpleNamespace(value="active"),
+        tags=[],
+        tenant=SimpleNamespace(slug="ipamstuttgartip"),
+    )
+
+    assert sync.get_differences(master, SlaveObj()) is False
+
 def test_build_filter_params_handles_unique_fields():
     sync = DummySync(None, None)
     obj = DummyObj(
-        name=SimpleNamespace(name="device-a"),
+        name="device-a",
         status=SimpleNamespace(value="active"),
     )
 
