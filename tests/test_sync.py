@@ -91,6 +91,30 @@ def test_get_differences_detects_changes():
     assert diff == {"status": "active"}
 
 
+
+
+def test_get_differences_avoids_expensive_missing_attribute_lookup():
+    sync = DummySync(None, None)
+
+    class SlaveObj:
+        name = "router-1"
+        status = SimpleNamespace(value="active")
+        tags = []
+
+        def __getattr__(self, item):
+            if item == "tenant":
+                raise RuntimeError("unexpected dynamic lookup")
+            raise AttributeError(item)
+
+    master = DummyObj(
+        name="router-1",
+        status=SimpleNamespace(value="active"),
+        tags=[],
+        tenant=SimpleNamespace(slug="ipamstuttgartip"),
+    )
+
+    assert sync.get_differences(master, SlaveObj()) is False
+
 def test_build_filter_params_handles_unique_fields():
     sync = DummySync(None, None)
     obj = DummyObj(

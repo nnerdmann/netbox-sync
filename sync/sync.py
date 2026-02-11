@@ -235,7 +235,8 @@ class Sync:
                 diff[param] = master_val
 
         for key, val in self.global_sync_values.items():
-            if hasattr(slave_obj, key) is False:
+            has_value, slave_val = self._try_get_param_value(slave_obj, key)
+            if not has_value:
                 continue
             slave_val = getattr(slave_obj, key)
             slave_val_dict = self._normalize_value(key, slave_val)
